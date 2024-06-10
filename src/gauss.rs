@@ -1,7 +1,7 @@
 // use core::slice::SlicePattern;
 
 use candle_core::{DType, Device, IndexOp};
-use candle_nn::{VarBuilder, VarMap};
+use candle_nn::{Optimizer, VarBuilder, VarMap};
 
 // def quaternion_to_matrix(quaternions: torch.Tensor) -> torch.Tensor:
 //     """
@@ -61,7 +61,7 @@ impl Splat {
         // let mut pos = candle_core::Tensor::new(&[[0.0f32, 0.0], [12.0f32, 12.0]], device)?;
         // let mut cov = candle_core::Tensor::new(&[[[1.0, 0.0], [0.0, 1.0]], [[]]], device)?;
         let pos = self.pos.unsqueeze(0)?.unsqueeze(0)?;
-        println!("pos: {}", pos);
+        // println!("pos: {}", pos);
         // let B = pos.shape().dims()[0];
         // println!("dist: {:?}", pos.shape());
         // pos = pos.expand(&[0, 12, 12, 2])?;
@@ -105,7 +105,7 @@ impl Cov2 {
 
     fn cov(&self, device: &Device) -> candle_core::Result<candle_core::Tensor> {
         let R = self.rot.mat3(device)?;
-        println!("R^T*R: {}", R.t()?.matmul(&R)?);
+        // println!("R^T*R: {}", R.t()?.matmul(&R)?);
         let m = candle_core::Tensor::eye(2, DType::F32, device)?;
         let scale = (m * self.scale.unsqueeze(0)?.expand(&[2, 2]))?;
         R.matmul(&(&scale * &scale)?.matmul(&R.t()?)?)
@@ -473,7 +473,18 @@ fn test2_gauss(device: &Device) -> candle_core::Result<candle_core::Tensor> {
 fn test3_gauss(device: &Device) -> candle_core::Result<()> {
     let varmap: VarMap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
+    let varmap2: VarMap = VarMap::new();
+    let vs2 = VarBuilder::from_varmap(&varmap2, DType::F32, &device);
     let splat = Splat::new(&vs);
+    let splat2 = Splat::new(&vs2);
+    // let splat3 = Splat::new(&vs2);
+    let mut sgd = candle_nn::AdamW::new(
+        varmap.all_vars(),
+        candle_nn::ParamsAdamW {
+            lr: 0.01,
+            ..Default::default()
+        },
+    )?;
     // splat.pos.slice_set(
     //     &candle_core::Tensor::new(&[6.0f32, 6.0], device).unwrap(),
     //     0,
@@ -489,8 +500,23 @@ fn test3_gauss(device: &Device) -> candle_core::Result<()> {
     //     0,
     //     0,
     // )?;
-    let screen = splat.render(device, 12)?;
-    println!("{}", screen);
+    let target = splat2.render(device, 12)?.detach();
+    for step in 0..10000 {
+        let screen = splat.render(device, 12)?;
+        let loss = candle_nn::loss::mse(
+            &screen, &target, // &candle_core::Tensor::ones((12, 12), DType::F32, device)?,
+        )?;
+        sgd.backward_step(&loss)?;
+        println!("{}", loss.to_scalar::<f32>()?);
+        // println!("scale: {}", splat.cov.scale);
+        // println!("rot: {}", splat.cov.rot.quat);
+        println!("pos: {}", splat.pos);
+        println!("target: {}", splat2.pos);
+        // println!("pos: {}", screen);
+    }
+
+    // let loss =
+    // println!("{}", screen);
     Ok(())
 }
 fn main() -> candle_core::Result<()> {
