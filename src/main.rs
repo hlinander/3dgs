@@ -10,6 +10,7 @@ use rand::{thread_rng, Rng};
 use std::fs::File;
 use std::io::{Result, Write};
 
+mod gauss;
 mod keeloq;
 
 struct KeeLoq {
@@ -398,7 +399,7 @@ struct Args {
 pub fn main() -> candle_core::Result<()> {
     let args = Args::parse();
     // Load the dataset
-    let default_learning_rate = 0.0001;
+    let default_learning_rate = 0.001;
     let training_args = TrainingArgs {
         epochs: args.epochs,
         learning_rate: args.learning_rate.unwrap_or(default_learning_rate),

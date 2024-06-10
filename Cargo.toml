@@ -5,6 +5,10 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "gauss"  # The name of the binary
+path = "src/gauss.rs"  # Path to the source file
+
 [dependencies]
 anyhow = "1.0.86"
 candle-core = "0.5.1"
