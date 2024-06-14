@@ -1,7 +1,9 @@
+#[cfg(feature = "metal")]
 extern crate accelerate_src;
 
 use candle_core::{DType, Device};
 use candle_nn::{Optimizer, VarBuilder, VarMap};
+#[cfg(feature = "duckdb")]
 use duckdb::{Connection, Result};
 use image::{io::Reader as ImageReader, ImageBuffer, Luma};
 use itertools::Itertools;
@@ -11,6 +13,7 @@ use rand::Rng;
 use std::time::{Duration, Instant};
 use std::{io::Cursor, process::exit};
 
+#[cfg(feature = "duckdb")]
 mod db;
 
 struct FastSplats {
@@ -239,15 +242,27 @@ impl FastSplats {
 
 fn train_splats(
     target: candle_core::Tensor,
-    n_splats: usize,
+    n_splats_per_batch: usize,
+    n_batches: usize,
     initial_scale: f64,
     epochs: usize,
     device: &Device,
-) -> candle_core::Result<FastSplats> {
+) -> candle_core::Result<Vec<FastSplats>> {
     let res = target.shape().dims()[0];
     let varmap: VarMap = VarMap::new();
     let vs = VarBuilder::from_varmap(&varmap, DType::F32, &device);
-    let splats = FastSplats::new(&vs, n_splats, res, initial_scale, device);
+    let splats = (0..n_batches)
+        .map(|idx| {
+            FastSplats::new(
+                &vs.pp(format!("batch_{}", idx)),
+                n_splats_per_batch,
+                res,
+                initial_scale,
+                device,
+            )
+        })
+        .collect_vec();
+    // let splats = FastSplats::new(&vs, n_splats, res, initial_scale, device);
 
     let mut optimizer = candle_nn::AdamW::new(
         varmap.all_vars(),
@@ -256,26 +271,36 @@ fn train_splats(
             ..Default::default()
         },
     )?;
+    #[cfg(feature = "duckdb")]
     let db_connection = db::init_db();
     let mut next_log = Instant::now();
     for epoch in 0..epochs {
-        let screen = splats.render(device)?;
-        // println!("{}", screen);
-        // panic!();
-        let loss = candle_nn::loss::mse(&screen, &target)?;
-        let grads = loss.backward()?;
-        optimizer.step(&grads)?;
-        if Instant::now().duration_since(next_log).as_millis() > 0 {
-            next_log = Instant::now() + Duration::from_secs(2);
-            println!("loss: {}", loss.detach().to_scalar::<f32>().unwrap());
-            // log_gradients(grads, &splats, &db_connection, epoch)?;
-            save_image(&screen, "output.png")?;
+        for active_idx in 0..n_batches {
+            let mut screen = candle_core::Tensor::zeros((res, res), DType::F32, device)?;
+            for (batch_idx, batch) in splats.iter().enumerate() {
+                let batch_screen = batch.render(device)?;
+                if batch_idx == active_idx {
+                    screen = (screen + batch_screen)?;
+                } else {
+                    screen = (screen + batch_screen.detach())?;
+                }
+            }
+            let loss = candle_nn::loss::mse(&screen, &target)?;
+            let grads = loss.backward()?;
+            optimizer.step(&grads)?;
+            if Instant::now().duration_since(next_log).as_millis() > 0 {
+                next_log = Instant::now() + Duration::from_secs(2);
+                println!("loss: {}", loss.detach().to_scalar::<f32>().unwrap());
+                // log_gradients(grads, &splats, &db_connection, epoch)?;
+                save_image(&screen, "output.png")?;
+            }
         }
     }
 
     Ok(splats)
 }
 
+#[cfg(feature = "duckdb")]
 fn log_gradients(
     grads: candle_core::backprop::GradStore,
     splats: &FastSplats,
@@ -351,8 +376,8 @@ fn main() -> candle_core::Result<()> {
     println!("{:?}", device);
 
     // let target = generate_target_from_splats(&device)?;
-    let target = load_image("deepfield.png", 32, &device)?;
+    let target = load_image("deepfield.png", 64, &device)?;
     save_image(&target, "target.png")?;
-    let trained_splats = train_splats(target, 50, 8.0, 100000, &device)?;
+    let trained_splats = train_splats(target, 100, 2, 8.0, 100000, &device)?;
     Ok(())
 }

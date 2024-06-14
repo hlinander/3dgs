@@ -846,13 +846,6 @@ fn test3_gauss_fast(device: &Device) -> candle_core::Result<()> {
             println!("{}", loss.detach().to_scalar::<f32>()?);
             let gp = grads.get(&splats.pos).unwrap();
             let gp = (gp * gp)?.sum(1)?.to_vec1::<f32>()?;
-            for v in gp {
-                conn.execute(
-                    "INSERT INTO grads (epoch, name, value) VALUES (?, ?, ?)",
-                    params![idx, "pos", v],
-                )
-                .expect("");
-            }
             save_image(&screen, "output.png", res);
         }
         //     let gradps: Vec<_> = splats
