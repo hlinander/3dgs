@@ -285,6 +285,7 @@ fn train_splats(
                     screen = (screen + batch_screen.detach())?;
                 }
             }
+            let screen = candle_nn::ops::sigmoid(&screen)?;
             let loss = candle_nn::loss::mse(&screen, &target)?;
             let grads = loss.backward()?;
             optimizer.step(&grads)?;
