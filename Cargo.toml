@@ -9,10 +9,15 @@ edition = "2021"
 name = "gauss"  # The name of the binary
 path = "src/gauss.rs"  # Path to the source file
 
+[[bin]]
+name = "gauss_full"  # The name of the binary
+path = "src/gauss_full.rs"  # Path to the source file
+
 [dependencies]
+accelerate-src = "0.3.2"
 anyhow = "1.0.86"
-candle-core = "0.5.1"
-candle-nn = "0.5.1"
+candle-core = {version="0.5.1", features=["accelerate", "metal"]}
+candle-nn = {version="0.5.1", features=["accelerate", "metal"]}
 clap = { version = "4.5.5", features = ["derive"]}
 duckdb = "0.10.2"
 image = "0.25.1"
