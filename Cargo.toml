@@ -14,7 +14,7 @@ name = "gauss_full"  # The name of the binary
 path = "src/gauss_full.rs"  # Path to the source file
 
 [dependencies]
-accelerate-src = "0.3.2"
+accelerate-src = {version="0.3.2", optional=true}
 anyhow = "1.0.86"
 candle-core = {version="0.5.1"}
 candle-nn = {version="0.5.1"}
@@ -31,5 +31,5 @@ rand = "0.8.5"
 
 [features]
 duckdb = ["dep:duckdb"]
-metal = ["candle-core/accelerate", "candle-core/metal", "candle-nn/accelerate", "candle-nn/metal"]
+metal = ["candle-core/accelerate", "candle-core/metal", "candle-nn/accelerate", "candle-nn/metal", "dep:accelerate-src"]
 cuda = ["candle-core/cuda", "candle-nn/cuda"]
