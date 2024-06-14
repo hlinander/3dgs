@@ -204,7 +204,7 @@ impl FastSplats {
     fn cov(&self, device: &Device) -> candle_core::Result<candle_core::Tensor> {
         let R = self.rot(device)?;
         let m = candle_core::Tensor::eye(2, DType::F32, device)?;
-        let scale_shift = (&self.scale);
+        let scale_shift = candle_core::Tensor::exp(&self.scale)?;
         let scale = (m.unsqueeze(0)?.expand(&[self.n_splats, 2, 2])?
             * scale_shift.unsqueeze(1)?.expand(&[self.n_splats, 2, 2]))?;
         let scale = scale.contiguous()?;
@@ -234,7 +234,8 @@ impl FastSplats {
             .color
             .unsqueeze(1)?
             .expand(&[self.n_splats, resolution, resolution])?;
-        let c6 = (candle_nn::ops::sigmoid(&color)? * c6)?;
+        let c6 = (candle_core::Tensor::exp(&color) * c6)?;
+        // let c6 = (candle_nn::ops::sigmoid(&color)? * c6)?;
         let c6 = c6.sum(0)?;
         Ok(c6)
     }
@@ -292,7 +293,8 @@ fn train_splats(
             if Instant::now().duration_since(next_log).as_millis() > 0 {
                 next_log = Instant::now() + Duration::from_secs(2);
                 println!("loss: {}", loss.detach().to_scalar::<f32>().unwrap());
-                // log_gradients(grads, &splats, &db_connection, epoch)?;
+                #[cfg(feature = "duckdb")]
+                log_gradients(grads, &splats, &db_connection, epoch)?;
                 save_image(&screen, "output.png")?;
             }
         }
@@ -304,13 +306,16 @@ fn train_splats(
 #[cfg(feature = "duckdb")]
 fn log_gradients(
     grads: candle_core::backprop::GradStore,
-    splats: &FastSplats,
+    splats: &Vec<FastSplats>,
     db_connection: &Connection,
     epoch: usize,
 ) -> Result<(), candle_core::Error> {
-    let gp = grads.get(&splats.pos).unwrap();
-    let gp = (gp * gp)?.sum(1)?.to_vec1::<f32>()?;
-    db::log_grad(db_connection, gp, "pos".to_string(), epoch);
+    for splat in splats {
+        if let Some(gp) = grads.get(&splat.pos) {
+            let gp = (gp * gp)?.sum(1)?.to_vec1::<f32>()?;
+            db::log_grad(db_connection, gp, "pos".to_string(), epoch);
+        }
+    }
     Ok(())
 }
 
@@ -379,6 +384,6 @@ fn main() -> candle_core::Result<()> {
     // let target = generate_target_from_splats(&device)?;
     let target = load_image("deepfield.png", 64, &device)?;
     save_image(&target, "target.png")?;
-    let trained_splats = train_splats(target, 100, 2, 8.0, 100000, &device)?;
+    let trained_splats = train_splats(target, 100, 1, 3.0, 100000, &device)?;
     Ok(())
 }
